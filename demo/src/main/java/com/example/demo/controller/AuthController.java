@@ -22,4 +22,7 @@ public class AuthController {
     String jwt = jwtUtil.generateToken("사용자ID", List.of("ROLE_USER"));
     return Map.of("accessToken", jwt);
   }
+
+
+
 }
