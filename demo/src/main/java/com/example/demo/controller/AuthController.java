@@ -19,7 +19,7 @@ public class AuthController {
     // 2) 카카오 /v2/user/me 호출 → 사용자 정보 획득
     // 3) 사용자 DB 저장/조회 (repo)
     // 4) jwtUtil.generateToken(...) 호출
-    String jwt = jwtUtil.generateToken("사용자ID", List.of("ROLE_USER"));
+    String jwt = jwtUtil.generateToken("사용자ID", List.of("ROLE_USER"), "USER");
     return Map.of("accessToken", jwt);
   }
 

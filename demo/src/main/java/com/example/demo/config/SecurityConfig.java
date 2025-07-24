@@ -76,7 +76,7 @@ public class SecurityConfig {
       // 내부 JWT 발급
       String jwt = jwtUtil.generateToken(principal,
           oauthToken.getAuthorities().stream()
-              .map(a -> a.getAuthority()).toList());
+              .map(a -> a.getAuthority()).toList(), "USER");
 
       // JSON 응답
       res.setStatus(HttpServletResponse.SC_OK);
@@ -103,14 +103,18 @@ public class SecurityConfig {
     // 로컬 로그인 성공 핸들러 → JWT 발급
     AuthenticationSuccessHandler lawyerLoginSuccessHandler = (req, res, auth) -> {
       String token = jwtUtil.generateToken(auth.getName(), auth.getAuthorities().stream()
-          .map(a -> a.getAuthority()).toList());
+          .map(a -> a.getAuthority()).toList(), "LAWYER");
       res.setContentType("application/json");
       res.getWriter().write("{\"token\": \"" + token + "\"}");
     };
 
     // 로컬 로그인 실패 핸들러
-    AuthenticationFailureHandler lawyerLoginFailureHandler = (req, res, ex) ->
-        res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Lawyer Login Failed");
+    AuthenticationFailureHandler lawyerLoginFailureHandler = (req, res, ex) -> {
+      res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+      res.setContentType("application/json");
+      res.getWriter().write("{\"error\":\"Lawyer Login Failed\"}");
+      res.getWriter().flush();
+    };
 
     // DaoAuthenticationProvider (Lawyer 전용)
     DaoAuthenticationProvider daoProvider = new DaoAuthenticationProvider();
@@ -118,6 +122,18 @@ public class SecurityConfig {
     daoProvider.setPasswordEncoder(passwordEncoder());
 
     http
+        // CSRF 비활성화
+        .csrf(csrf -> csrf.disable())
+
+        // 로컬 로그인 설정 (formLogin)
+        .formLogin(form -> form
+            .loginProcessingUrl("/auth/login") // POST 요청
+            .usernameParameter("loginEmail")
+            .passwordParameter("password")
+            .successHandler(lawyerLoginSuccessHandler)
+            .failureHandler(lawyerLoginFailureHandler)
+        )
+
         // OAuth2 로그인 설정
         .oauth2Login(oauth -> oauth
             .userInfoEndpoint(u -> u.userService(customOAuth2UserService))
@@ -125,31 +141,22 @@ public class SecurityConfig {
             .failureHandler(oauth2FailureHandler)
         )
 
-        // 로컬 로그인 설정 (formLogin)
-        .formLogin(form -> form
-            .loginProcessingUrl("/auth/login") // POST 요청
-            .usernameParameter("username")
-            .passwordParameter("password")
-            .successHandler(lawyerLoginSuccessHandler)
-            .failureHandler(lawyerLoginFailureHandler)
-        )
-
         // 세션 설정 (기존 유지: OAuth2용 state 저장 가능)
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
 
         // 인증 Provider 등록 (Lawyer 전용)
-        .authenticationProvider(daoProvider)
+        .authenticationProvider(lawyerAuthProvider(lawyerDetailsService))
 
-        // CSRF 비활성화
-        .csrf(csrf -> csrf.disable())
 
         // JWT 필터: OAuth2 로그인 이후에 추가
-        .addFilterAfter(new JwtAuthenticationFilter(jwtUtil), OAuth2LoginAuthenticationFilter.class)
+        // .addFilterAfter(new JwtAuthenticationFilter(jwtUtil), OAuth2LoginAuthenticationFilter.class)
 
         // URL 접근 제한
         .authorizeHttpRequests(auth -> auth
+            .requestMatchers( "/login/oauth2/**").permitAll()
+            .requestMatchers("/.well-known/**").permitAll()
             .requestMatchers("/api/protected/**").authenticated()
-            .requestMatchers("/auth/login", "/auth/signup", "/oauth2/**").permitAll()
+            .requestMatchers("/auth/**", "/oauth2/**").permitAll()
             .anyRequest().permitAll()
         );
 
@@ -172,12 +179,11 @@ public class SecurityConfig {
   }
 
   @Bean
-  public DaoAuthenticationProvider lawyerAuthProvider(LawyerDetailsService svc){
-    DaoAuthenticationProvider prov = new DaoAuthenticationProvider();
-    prov.setUserDetailsService(svc);
-    prov.setPasswordEncoder(passwordEncoder());
-
-    return prov;
+  public DaoAuthenticationProvider lawyerAuthProvider(LawyerDetailsService lawyerDetailsService) {
+    DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+    provider.setUserDetailsService(lawyerDetailsService);
+    provider.setPasswordEncoder(passwordEncoder());
+    return provider;
   }
 
   @Bean

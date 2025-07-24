@@ -41,7 +41,7 @@ public class TestAuthController {
     );
 
     // 2) 자체 JWT 발급
-    String jwt = jwtUtil.generateToken("kakaoUser", List.of("ROLE_USER"));
+    String jwt = jwtUtil.generateToken("kakaoUser", List.of("ROLE_USER"), "USER");
     return Map.of(
         "social", kakao,
         "jwt", jwt

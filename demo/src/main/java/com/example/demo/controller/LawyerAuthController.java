@@ -3,6 +3,7 @@ package com.example.demo.controller;
 import com.example.demo.dto.LawyerLoginDto;
 import com.example.demo.dto.LawyerSignupDto;
 import com.example.demo.entity.Lawyer;
+import com.example.demo.entity.Lawyer.CertificationStatus;
 import com.example.demo.repository.LawyerRepository;
 import com.example.demo.util.JwtUtil;
 import java.util.List;
@@ -39,35 +40,46 @@ public class LawyerAuthController {
 
   @PostMapping("/signup")
   public ResponseEntity<?> signup(@RequestBody LawyerSignupDto dto) {
-    if (lawyerRepo.existsByUsername(dto.getUsername())) {
-      return ResponseEntity.badRequest().body("이미 존재하는 사용자명");
+    if (lawyerRepo.existsByLoginEmail(dto.getLoginEmail())) {
+      return ResponseEntity.badRequest().body("이미 등록된 이메일입니다.");
     }
+
     Lawyer l = new Lawyer();
-    l.setUsername(dto.getUsername());
-    l.setPassword(pwEncoder.encode(dto.getPassword()));
-    l.setRoles(List.of("ROLE_LAWYER"));
+    l.setLoginEmail(dto.getLoginEmail());
+    l.setPasswordHash(pwEncoder.encode(dto.getPassword()));
+    l.setName(dto.getName());
+    l.setIntroduction(dto.getIntroduction());
+    l.setCertificationStatus(CertificationStatus.PENDING);
+    l.setConsultationCount(0);
     lawyerRepo.save(l);
-    return ResponseEntity.ok("가입 완료");
+
+    return ResponseEntity.ok("가입 신청이 완료되었습니다.");
   }
 
   @PostMapping("/login/json")
   public ResponseEntity<?> loginJson(@RequestBody LawyerLoginDto dto) {
-    if (dto.getUsername() == null || dto.getPassword() == null) {
-      return ResponseEntity.badRequest().body(Map.of("error", "Missing username or password"));
+    if (dto.getLoginEmail() == null || dto.getPassword() == null) {
+      return ResponseEntity.badRequest().body(Map.of("error", "이메일 또는 비밀번호 누락"));
     }
 
     try {
       // 1. 인증 시도
       Authentication authentication = authManager.authenticate(
-          new UsernamePasswordAuthenticationToken(dto.getUsername(), dto.getPassword())
+          new UsernamePasswordAuthenticationToken(dto.getLoginEmail(), dto.getPassword())
       );
+
+      String raw = dto.getPassword();
+      String encoded = lawyerRepo.findByLoginEmail(dto.getLoginEmail())
+          .get().getPasswordHash();
+      boolean matches = pwEncoder.matches(raw, encoded);
+      System.out.println("Password matches? " + matches);
 
       // 2. 성공 시 JWT 발급
       String token = jwtUtil.generateToken(
           authentication.getName(),
           authentication.getAuthorities().stream()
               .map(GrantedAuthority::getAuthority)
-              .toList()
+              .toList(), "USER"
       );
 
       // 3. 응답 반환
@@ -78,13 +90,13 @@ public class LawyerAuthController {
 
     } catch (BadCredentialsException e) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-          .body(Map.of("error", "Invalid credentials"));
+          .body(Map.of("error", "비밀번호가 올바르지 않다."));
     } catch (UsernameNotFoundException e) {
       return ResponseEntity.status(HttpStatus.NOT_FOUND)
-          .body(Map.of("error", "User not found"));
+          .body(Map.of("error", "그런 계정은 없다."));
     } catch (Exception e) {
       return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-          .body(Map.of("error", "Login failed"));
+          .body(Map.of("error", "아무튼 실패"));
     }
   }
 
